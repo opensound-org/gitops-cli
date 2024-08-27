@@ -61,6 +61,7 @@ async fn main() -> Result<(), anyhow::Error> {
     nu_ansi_term::enable_ansi_support().ok();
     init_tracing();
 
-    let _op = Op::init();
-    Ok(())
+    match Op::init() {
+        _ => Err(anyhow::anyhow!("暂时todo！")),
+    }
 }
