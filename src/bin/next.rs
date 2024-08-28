@@ -37,7 +37,7 @@ enum Alarm {
 }
 
 #[cfg(debug_assertions)]
-pub fn init_tracing() {
+fn init_tracing() {
     tracing_subscriber::fmt()
         .with_timer(ChronoLocal::new("%m-%d %H:%M:%S".into()))
         .with_max_level(tracing::Level::DEBUG)
@@ -47,7 +47,7 @@ pub fn init_tracing() {
 }
 
 #[cfg(not(debug_assertions))]
-pub fn init_tracing() {
+fn init_tracing() {
     tracing_subscriber::fmt()
         .with_timer(ChronoLocal::new("%m-%d %H:%M:%S".into()))
         .with_span_events(FmtSpan::FULL)
