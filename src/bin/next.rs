@@ -55,11 +55,16 @@ fn init_tracing() {
         .init();
 }
 
-#[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
+// 参见：https://github.com/tokio-rs/tracing/issues/3068
+fn init_tracing_with_ansi() {
     #[cfg(windows)]
     nu_ansi_term::enable_ansi_support().ok();
     init_tracing();
+}
+
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
+    init_tracing_with_ansi();
 
     match Op::init() {
         _ => Err(anyhow::anyhow!("暂时todo！")),
