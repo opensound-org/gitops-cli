@@ -5,7 +5,7 @@ use tracing_subscriber::fmt::{format::FmtSpan, time::ChronoLocal};
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing_with_ansi();
 
-    match Op::init() {
+    match Cli::init() {
         _ => Err(anyhow::anyhow!("暂时todo！")),
     }
 }
@@ -37,6 +37,23 @@ fn init_tracing() {
 }
 
 #[derive(Parser, Debug)]
+struct Cli {
+    #[command(subcommand)]
+    op: Op,
+    #[arg(default_value = "gitops.toml")]
+    config: String,
+}
+
+impl Cli {
+    fn init() -> Self {
+        let s = Self::parse();
+        tracing::info!("config: {:?}", s.config);
+        tracing::info!("op: {:?}", s.op);
+        s
+    }
+}
+
+#[derive(Subcommand, Debug)]
 enum Op {
     #[command(subcommand)]
     Upgrade(Target),
@@ -47,14 +64,6 @@ enum Op {
         reason: Alarm,
         host: String,
     },
-}
-
-impl Op {
-    fn init() -> Self {
-        let s = Self::parse();
-        tracing::info!("{:?}", s);
-        s
-    }
 }
 
 #[derive(Subcommand, Debug)]
