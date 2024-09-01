@@ -19,7 +19,11 @@ async fn main() -> Result<(), anyhow::Error> {
             .await?;
     }
 
-    let _config = cli.resolve_config().await.hook_err(&pushover).await?;
+    let _config = cli
+        .resolve_config()
+        .await
+        .hook_err_if(op.is_deploy(), &pushover)
+        .await?;
 
     match op {
         _ => Err(anyhow::anyhow!("暂时todo！")),
@@ -167,13 +171,25 @@ impl Pushover {
 #[derive(Deserialize)]
 struct Config;
 
-trait HookErr<T> {
-    async fn hook_err(self, args: &T) -> Self;
+trait HookErrIf<T>: Sized {
+    async fn hook_err_if(self, predicate: bool, args: &T) -> Self {
+        if predicate {
+            self.run_hook(args).await;
+        }
+        self
+    }
+
+    async fn _hook_err(self, args: &T) -> Self {
+        self.run_hook(args).await;
+        self
+    }
+
+    async fn run_hook(&self, args: &T);
 }
 
-impl<T, E: Display> HookErr<Pushover> for Result<T, E> {
-    async fn hook_err(self, args: &Pushover) -> Self {
-        if let Err(err) = &self {
+impl<T, E: Display> HookErrIf<Pushover> for Result<T, E> {
+    async fn run_hook(&self, args: &Pushover) {
+        if let Err(err) = self {
             args.send_if_some(
                 &format!("GitOps执行失败！原因：\r\n{}", err),
                 PushoverSound::FALLING,
@@ -181,6 +197,5 @@ impl<T, E: Display> HookErr<Pushover> for Result<T, E> {
             .await
             .ok();
         }
-        self
     }
 }
