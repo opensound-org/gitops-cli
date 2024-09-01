@@ -40,6 +40,9 @@ async fn main() -> Result<(), anyhow::Error> {
             let mp = MemProbe::new();
 
             match target {
+                Target::Hugo => {
+                    let _hugo = Hugo::upgrade(&config).await.hook_err(&pushover).await?;
+                }
                 _ => (),
             }
 
@@ -211,7 +214,7 @@ trait HookErrIf<T>: Sized {
         self
     }
 
-    async fn _hook_err(self, args: &T) -> Self {
+    async fn hook_err(self, args: &T) -> Self {
         self.run_hook(args).await;
         self
     }
