@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use pushover_rs::{send_pushover_request, PushoverSound};
-use std::env;
+use serde::Deserialize;
+use std::{env, fmt::Display};
+use tokio::fs;
 use tracing_subscriber::fmt::{format::FmtSpan, time::ChronoLocal};
 
 #[tokio::main]
@@ -9,13 +11,15 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let cli = Cli::init();
     let pushover = cli.get_pushover()?;
-    let op = cli.op;
+    let op = &cli.op;
 
     if op.is_deploy() {
         pushover
             .send_if_some(&format!("开始执行GitOps：{:?}", op), PushoverSound::BIKE)
             .await?;
     }
+
+    let _config = cli.resolve_config().await.hook_err(&pushover).await?;
 
     match op {
         _ => Err(anyhow::anyhow!("暂时todo！")),
@@ -73,6 +77,12 @@ impl Cli {
         } else {
             Ok(Pushover::None)
         }
+    }
+
+    async fn resolve_config(&self) -> Result<Config, anyhow::Error> {
+        let config = &self.config;
+        tracing::info!("正在读取{}……", config);
+        Ok(toml::from_str(&fs::read_to_string(config).await?)?)
     }
 }
 
@@ -151,5 +161,26 @@ impl Pushover {
                 }
             }
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct Config;
+
+trait HookErr<T> {
+    async fn hook_err(self, args: &T) -> Self;
+}
+
+impl<T, E: Display> HookErr<Pushover> for Result<T, E> {
+    async fn hook_err(self, args: &Pushover) -> Self {
+        if let Err(err) = &self {
+            args.send_if_some(
+                &format!("GitOps执行失败！原因：\r\n{}", err),
+                PushoverSound::FALLING,
+            )
+            .await
+            .ok();
+        }
+        self
     }
 }
