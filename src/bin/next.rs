@@ -1,4 +1,7 @@
+mod mem_probe;
+
 use clap::{Parser, Subcommand, ValueEnum};
+use mem_probe::MemProbe;
 use pushover_rs::{send_pushover_request, PushoverSound};
 use serde::Deserialize;
 use std::{
@@ -33,6 +36,21 @@ async fn main() -> Result<(), anyhow::Error> {
 
     match op {
         Op::Upgrade(Target::Hugo) => upgrade_hugo(&config).await.map(|_| ()),
+        Op::Deploy(target) => {
+            let mp = MemProbe::new();
+
+            match target {
+                _ => (),
+            }
+
+            let (mb, _) = mp.join_and_get_mb_sample();
+            pushover
+                .send_if_some(
+                    &format!("GitOps执行成功！\r\n峰值内存：{} MB", mb),
+                    PushoverSound::MAGIC,
+                )
+                .await
+        }
         _ => Err(anyhow::anyhow!("暂时todo！")),
     }
 }
