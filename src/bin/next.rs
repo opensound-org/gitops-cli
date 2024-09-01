@@ -1,11 +1,23 @@
 use clap::{Parser, Subcommand, ValueEnum};
+use pushover_rs::{send_pushover_request, PushoverSound};
+use std::env;
 use tracing_subscriber::fmt::{format::FmtSpan, time::ChronoLocal};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     init_tracing_with_ansi();
 
-    match Cli::init() {
+    let cli = Cli::init();
+    let pushover = cli.get_pushover()?;
+    let op = cli.op;
+
+    if op.is_deploy() {
+        pushover
+            .send_if_some(&format!("开始执行GitOps：{:?}", op), PushoverSound::BIKE)
+            .await?;
+    }
+
+    match op {
         _ => Err(anyhow::anyhow!("暂时todo！")),
     }
 }
@@ -51,6 +63,17 @@ impl Cli {
         tracing::info!("op: {:?}", s.op);
         s
     }
+
+    fn get_pushover(&self) -> Result<Pushover, anyhow::Error> {
+        if self.op.need_pushover() {
+            Ok(Pushover::Some {
+                user_key: env::var("PUSHOVER_USER_KEY")?,
+                app_token: env::var("PUSHOVER_APP_TOKEN")?,
+            })
+        } else {
+            Ok(Pushover::None)
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -66,6 +89,23 @@ enum Op {
     },
 }
 
+impl Op {
+    fn need_pushover(&self) -> bool {
+        match self {
+            Self::Deploy(_) | Self::Alarm { reason: _, host: _ } => true,
+            _ => false,
+        }
+    }
+
+    fn is_deploy(&self) -> bool {
+        if let Self::Deploy(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 enum Target {
     Hugo,
@@ -78,4 +118,38 @@ enum Alarm {
     ConnectRemote,
     ConnectLocal,
     Unlock,
+}
+
+enum Pushover {
+    None,
+    Some { user_key: String, app_token: String },
+}
+
+impl Pushover {
+    async fn send_if_some(&self, message: &str, sound: PushoverSound) -> Result<(), anyhow::Error> {
+        match self {
+            Self::None => Ok(()),
+            Self::Some {
+                user_key,
+                app_token,
+            } => {
+                tracing::info!("正在发送Pushover消息：{}", message);
+                tracing::info!("Pushover音色：{}", sound);
+
+                match send_pushover_request(
+                    pushover_rs::MessageBuilder::new(user_key, app_token, message)
+                        .set_sound(sound)
+                        .build(),
+                )
+                .await
+                {
+                    Ok(res) => match res.errors {
+                        None => Ok(()),
+                        Some(errs) => Err(anyhow::anyhow!("{}", errs.join("\r\n"))),
+                    },
+                    Err(err) => Err(anyhow::anyhow!("{}", err)),
+                }
+            }
+        }
+    }
 }
