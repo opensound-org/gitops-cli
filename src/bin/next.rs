@@ -13,7 +13,7 @@ use ops::{
 use pushover_rs::{send_pushover_request, PushoverSound};
 use serde::Deserialize;
 use std::{env, ffi::OsString, fmt::Display, io::Read};
-use tokio::fs;
+use tokio::{fs, process::Command};
 use tracing_subscriber::fmt::{format::FmtSpan, time::ChronoLocal};
 
 #[tokio::main]
@@ -300,4 +300,23 @@ async fn chmod_exec(path: impl AsRef<std::path::Path>) -> Result<(), anyhow::Err
     tracing::info!("正在设置执行权限……");
     use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
     Ok(fs::set_permissions(path, Permissions::from_mode(0o755)).await?)
+}
+
+#[allow(dead_code)]
+async fn spawn_command(cmd: &mut Command, hint: &str) -> Result<(), anyhow::Error> {
+    let status = cmd.spawn()?.wait().await?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "{}命令执行失败！退出码：{}",
+            hint,
+            if let Some(code) = status.code() {
+                code.to_string()
+            } else {
+                "None".into()
+            }
+        ))
+    }
 }
