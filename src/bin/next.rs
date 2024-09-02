@@ -1,11 +1,15 @@
 mod mem_probe;
 mod ops {
+    pub mod caddy;
     pub mod hugo;
 }
 
 use clap::{Parser, Subcommand, ValueEnum};
 use mem_probe::MemProbe;
-use ops::hugo::{Hugo, HugoConfig};
+use ops::{
+    caddy::{self, CaddyConfig},
+    hugo::{Hugo, HugoConfig},
+};
 use pushover_rs::{send_pushover_request, PushoverSound};
 use serde::Deserialize;
 use std::{env, ffi::OsString, fmt::Display, io::Read};
@@ -34,6 +38,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     match op {
         Op::Upgrade(Target::Hugo) => Hugo::upgrade(&config).await.map(|_| ()),
+        Op::Upgrade(Target::Caddy) => caddy::upgrade(&config).await,
         Op::Deploy(target) => {
             let mp = MemProbe::new();
 
@@ -197,6 +202,7 @@ impl Pushover {
 #[derive(Deserialize)]
 struct Config {
     hugo: Option<HugoConfig>,
+    caddy: Option<CaddyConfig>,
 }
 
 trait HookErrIf<T>: Sized {
