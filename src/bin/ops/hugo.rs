@@ -37,7 +37,7 @@ impl Hugo {
                     need_fetch = false;
                     tracing::info!("现有hugo版本匹配！将跳过下载");
                 } else {
-                    tracing::info!("现有hug版本不匹配，准备更新hugo");
+                    tracing::info!("现有hugo版本不匹配，准备更新hugo");
                 }
             } else {
                 return Err(anyhow::anyhow!(
