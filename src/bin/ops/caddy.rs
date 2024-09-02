@@ -19,7 +19,7 @@ pub async fn upgrade(config: &Config) -> Result<(), anyhow::Error> {
     let caddy = exe.with_file_name("caddy");
     let mut need_fetch = true;
 
-    if let Ok(output) = Command::new(caddy).arg("version").output().await {
+    if let Ok(output) = Command::new(&caddy).arg("version").output().await {
         let status = output.status;
 
         if status.success() {
@@ -47,6 +47,19 @@ pub async fn upgrade(config: &Config) -> Result<(), anyhow::Error> {
     }
 
     if need_fetch {
+        #[cfg(windows)]
+        use windows_service::{
+            service::ServiceAccess,
+            service_manager::{ServiceManager, ServiceManagerAccess},
+        };
+
+        #[cfg(windows)]
+        tracing::info!("正在连接本地服务……");
+
+        #[cfg(windows)]
+        let service = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?
+            .open_service("caddy", ServiceAccess::START | ServiceAccess::STOP)?;
+
         #[cfg(target_os = "linux")]
         const SUFFIX: &str = "linux_amd64.tar.gz";
         #[cfg(target_os = "windows")]
@@ -71,7 +84,11 @@ pub async fn upgrade(config: &Config) -> Result<(), anyhow::Error> {
 
             let (name, contents) = unzip(&bytes, "caddy")?;
 
-            // __todo__: windows-service stop
+            #[cfg(windows)]
+            {
+                tracing::info!("正在停止服务……");
+                service.stop()?;
+            }
 
             tracing::info!(
                 "正在保存：{:?}（{} MB）",
@@ -85,9 +102,21 @@ pub async fn upgrade(config: &Config) -> Result<(), anyhow::Error> {
             #[cfg(not(windows))]
             chmod_exec(path).await?;
 
-            // __todo__:
-            // Windows: service start
-            // Linux: caddy stop & caddy start
+            #[cfg(not(windows))]
+            use super::super::spawn_command;
+
+            #[cfg(not(windows))]
+            {
+                tracing::info!("正在停止服务……");
+                spawn_command(Command::new(&caddy).arg("stop"), "caddy stop").await?;
+            }
+
+            tracing::info!("正在启动服务……");
+
+            #[cfg(windows)]
+            service.start::<&str>(&[])?;
+            #[cfg(not(windows))]
+            spawn_command(Command::new(&caddy).arg("start"), "caddy start").await?;
         }
     }
 
