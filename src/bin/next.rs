@@ -1,17 +1,15 @@
 mod mem_probe;
+mod ops {
+    pub mod hugo;
+}
 
 use clap::{Parser, Subcommand, ValueEnum};
 use mem_probe::MemProbe;
+use ops::hugo::{Hugo, HugoConfig};
 use pushover_rs::{send_pushover_request, PushoverSound};
 use serde::Deserialize;
-use std::{
-    env::{self, current_exe},
-    ffi::OsString,
-    fmt::Display,
-    io::Read,
-    path::PathBuf,
-};
-use tokio::{fs, process::Command};
+use std::{env, ffi::OsString, fmt::Display, io::Read};
+use tokio::fs;
 use tracing_subscriber::fmt::{format::FmtSpan, time::ChronoLocal};
 
 #[tokio::main]
@@ -201,11 +199,6 @@ struct Config {
     hugo: Option<HugoConfig>,
 }
 
-#[derive(Deserialize)]
-struct HugoConfig {
-    version: String,
-}
-
 trait HookErrIf<T>: Sized {
     async fn hook_err_if(self, predicate: bool, args: &T) -> Self {
         if predicate {
@@ -235,102 +228,13 @@ impl<T, E: Display> HookErrIf<Pushover> for Result<T, E> {
     }
 }
 
-#[allow(dead_code)]
-struct Hugo(PathBuf);
-
-impl Hugo {
-    async fn upgrade(config: &Config) -> Result<Self, anyhow::Error> {
-        let version = &config
-            .hugo
-            .as_ref()
-            .ok_or(anyhow::anyhow!("找不到[hugo]字段！"))?
-            .version;
-
-        tracing::info!("请求的hugo版本是：{}", version);
-        tracing::info!("正在校验现有hugo版本……");
-
-        let exe = current_exe()?;
-        let hugo = exe.with_file_name("hugo");
-        let mut need_fetch = true;
-
-        if let Ok(output) = Command::new(&hugo).arg("version").output().await {
-            let status = output.status;
-
-            if status.success() {
-                if output
-                    .stdout
-                    .starts_with(format!("hugo v{}", version).as_bytes())
-                {
-                    need_fetch = false;
-                    tracing::info!("现有hugo版本匹配！将跳过下载");
-                } else {
-                    tracing::info!("现有hug版本不匹配，准备更新hugo");
-                }
-            } else {
-                return Err(anyhow::anyhow!(
-                    "hugo version执行失败！退出码：{}",
-                    if let Some(code) = status.code() {
-                        code.to_string()
-                    } else {
-                        "None".into()
-                    }
-                ));
-            }
-        } else {
-            tracing::info!("hugo不存在，准备下载hugo");
-        }
-
-        if need_fetch {
-            #[cfg(target_os = "macos")]
-            const SUFFIX: &str = "darwin-universal.tar.gz";
-            #[cfg(target_os = "linux")]
-            const SUFFIX: &str = "Linux-64bit.tar.gz";
-            #[cfg(target_os = "windows")]
-            const SUFFIX: &str = "windows-amd64.zip";
-
-            let url = format!(
-                "https://github.com/gohugoio/hugo/releases/download/v{}/hugo_extended_{}_{}",
-                version, version, SUFFIX
-            );
-            tracing::info!("正在GET：{}", url);
-
-            let bytes = reqwest::get(url).await?.error_for_status()?.bytes().await?;
-
-            if bytes.is_empty() {
-                return Err(anyhow::anyhow!("未下载任何内容！"));
-            } else {
-                tracing::info!(
-                    "已下载：{} MB",
-                    retain_decimal_places(bytes.len() as f64 / 1024.0 / 1024.0, 3)
-                );
-                tracing::info!("正在解压……");
-
-                let (name, contents) = unzip(&bytes)?;
-                tracing::info!(
-                    "正在保存：{:?}（{} MB）",
-                    name,
-                    retain_decimal_places(contents.len() as f64 / 1024.0 / 1024.0, 3)
-                );
-
-                let path = exe.with_file_name(name);
-                fs::write(&path, contents).await?;
-
-                #[cfg(not(windows))]
-                chmod_exec(path).await?;
-            }
-        }
-
-        Ok(Self(hugo))
-    }
-}
-
 fn retain_decimal_places(f: f64, n: i32) -> f64 {
     let power = 10.0f64.powi(n);
     (f * power).round() / power
 }
 
 #[cfg(windows)]
-fn unzip(z: &[u8]) -> Result<(OsString, Vec<u8>), anyhow::Error> {
+fn unzip(z: &[u8], e_name: &str) -> Result<(OsString, Vec<u8>), anyhow::Error> {
     use std::io::Cursor;
     use zip::ZipArchive;
 
@@ -348,7 +252,7 @@ fn unzip(z: &[u8]) -> Result<(OsString, Vec<u8>), anyhow::Error> {
         if name
             .to_str()
             .ok_or(anyhow::anyhow!("压缩文件名编码异常！"))?
-            .starts_with("hugo")
+            .starts_with(e_name)
         {
             let mut contents = Vec::new();
             file.read_to_end(&mut contents)?;
@@ -356,11 +260,11 @@ fn unzip(z: &[u8]) -> Result<(OsString, Vec<u8>), anyhow::Error> {
         }
     }
 
-    Err(anyhow::anyhow!("压缩包中未找到hugo执行文件！"))
+    Err(anyhow::anyhow!("压缩包中未找到{}执行文件！", e_name))
 }
 
 #[cfg(not(windows))]
-fn unzip(z: &[u8]) -> Result<(OsString, Vec<u8>), anyhow::Error> {
+fn unzip(z: &[u8], e_name: &str) -> Result<(OsString, Vec<u8>), anyhow::Error> {
     use flate2::read::GzDecoder;
     use tar::Archive;
 
@@ -374,7 +278,7 @@ fn unzip(z: &[u8]) -> Result<(OsString, Vec<u8>), anyhow::Error> {
         if name
             .to_str()
             .ok_or(anyhow::anyhow!("压缩文件名编码异常！"))?
-            .starts_with("hugo")
+            .starts_with(e_name)
         {
             let mut contents = Vec::new();
             file.read_to_end(&mut contents)?;
@@ -382,7 +286,7 @@ fn unzip(z: &[u8]) -> Result<(OsString, Vec<u8>), anyhow::Error> {
         }
     }
 
-    Err(anyhow::anyhow!("压缩包中未找到hugo执行文件！"))
+    Err(anyhow::anyhow!("压缩包中未找到{}执行文件！", e_name))
 }
 
 #[cfg(not(windows))]
