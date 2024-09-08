@@ -99,3 +99,8 @@ impl Hugo {
         Ok(Self(hugo))
     }
 }
+
+pub async fn deploy(config: &Config) -> Result<(), anyhow::Error> {
+    let _hugo = Hugo::upgrade(&config).await?;
+    Ok(())
+}
