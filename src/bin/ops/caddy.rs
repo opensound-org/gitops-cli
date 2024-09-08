@@ -137,3 +137,7 @@ fn get_config(config: &Config) -> Result<&CaddyConfig, anyhow::Error> {
         .as_ref()
         .ok_or(anyhow::anyhow!("找不到[caddy]字段！"))
 }
+
+pub async fn deploy(_config: &Config) -> Result<(), anyhow::Error> {
+    Err(anyhow::anyhow!("暂时todo！"))
+}
