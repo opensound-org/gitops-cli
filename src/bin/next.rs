@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use mem_probe::MemProbe;
 use ops::{
     caddy::{self, CaddyConfig},
-    hugo::{Hugo, HugoConfig},
+    hugo::{self, Hugo, HugoConfig},
 };
 use pushover_rs::{send_pushover_request, PushoverSound};
 use serde::Deserialize;
@@ -44,11 +44,11 @@ async fn main() -> Result<(), anyhow::Error> {
             let mp = MemProbe::new();
 
             match target {
-                Target::Hugo => {
-                    let _hugo = Hugo::upgrade(&config).await.hook_err(&pushover).await?;
-                }
-                _ => (),
+                Target::Hugo => hugo::deploy(&config).await,
+                Target::Caddy => caddy::deploy(&config).await,
             }
+            .hook_err(&pushover)
+            .await?;
 
             let (mb, _) = mp.join_and_get_mb_sample();
             pushover
