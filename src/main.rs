@@ -341,14 +341,6 @@ async fn remove_public() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn copy_dir<P, Q>(from: P, to: Q) -> Result<u64, anyhow::Error>
-where
-    P: AsRef<Path> + Send + 'static,
-    Q: AsRef<Path> + Send + 'static,
-{
-    Ok(spawn_blocking(move || dir::copy(from, to, &Default::default())).await??)
-}
-
 async fn deploy_github(config: &GithubDeployConfig, for_draft: bool) -> Result<(), anyhow::Error> {
     tracing::info!(
         "正在deploy github {}",
@@ -392,7 +384,7 @@ async fn deploy_github(config: &GithubDeployConfig, for_draft: bool) -> Result<(
     remove_public().await?;
 
     tracing::info!("正在拷贝public目录……");
-    copy_dir("../public", "").await?;
+    spawn_blocking(move || dir::copy("../public", "", &Default::default())).await??;
 
     tracing::info!("正在提交……");
     spawn_command(Command::new("git").arg("add").arg("."), "git").await?;
