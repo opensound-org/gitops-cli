@@ -122,6 +122,12 @@ impl Cli {
     }
 }
 
+impl Drop for Cli {
+    fn drop(&mut self) {
+        tracing::info!("执行完毕！");
+    }
+}
+
 #[derive(Subcommand, Debug)]
 enum Op {
     #[command(subcommand)]
