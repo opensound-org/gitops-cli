@@ -1,4 +1,7 @@
-use super::super::{retain_decimal_places, unzip, Config};
+use super::super::{
+    utils::{retain_decimal_places, unzip},
+    Config,
+};
 use serde::Deserialize;
 use std::env::current_exe;
 use tokio::{fs, process::Command};
