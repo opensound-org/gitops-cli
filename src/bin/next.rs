@@ -1,4 +1,5 @@
 mod mem_probe;
+mod opendal_fs;
 mod ops {
     pub mod caddy;
     pub mod hugo;
