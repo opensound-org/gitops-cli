@@ -193,7 +193,7 @@ pub async fn deploy(config: &Config) -> Result<(), anyhow::Error> {
     config
         .github
         .access_token
-        .replace(env_var("DEPLOY_GITHUB_ACCESS_TOKE")?);
+        .replace(env_var("DEPLOY_GITHUB_ACCESS_TOKEN")?);
     config
         .github
         .user_email
