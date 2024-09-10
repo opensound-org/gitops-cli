@@ -208,7 +208,7 @@ impl Pushover {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct Config {
     hugo: Option<HugoConfig>,
     caddy: Option<CaddyConfig>,
