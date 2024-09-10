@@ -94,6 +94,3 @@ pub async fn spawn_command(cmd: &mut Command, hint: &str) -> Result<(), anyhow::
         ))
     }
 }
-
-#[allow(unused)]
-fn main() {}
