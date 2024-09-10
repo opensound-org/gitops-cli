@@ -69,7 +69,6 @@ pub async fn chmod_exec(path: impl AsRef<std::path::Path>) -> Result<(), anyhow:
     Ok(fs::set_permissions(path, Permissions::from_mode(0o755)).await?)
 }
 
-#[allow(dead_code)]
 pub async fn spawn_command(cmd: &mut Command, hint: &str) -> Result<(), anyhow::Error> {
     let status = cmd.spawn()?.wait().await?;
 

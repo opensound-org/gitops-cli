@@ -1,26 +1,67 @@
 use super::super::{
-    utils::{retain_decimal_places, unzip},
+    opendal_fs::{sync_dir, ConcurrentUploadTasks},
+    utils::{retain_decimal_places, spawn_command, unzip},
     Config,
 };
+use fs_extra::dir;
+use opendal::{layers::MimeGuessLayer, services::Oss, Operator};
 use serde::Deserialize;
-use std::{env::current_exe, path::PathBuf};
-use tokio::{fs, process::Command};
+use std::{
+    env::{self, current_exe, set_current_dir},
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
+use tokio::{
+    fs::{self, remove_dir_all},
+    process::Command,
+    task::spawn_blocking,
+};
 
 #[derive(Deserialize)]
 pub struct HugoConfig {
     version: String,
+    deploy: Option<DeployConfig>,
 }
 
-#[allow(dead_code)]
+#[derive(Deserialize, Clone)]
+struct DeployConfig {
+    github: GithubConfig,
+    oss: OssConfig,
+}
+
+#[derive(Deserialize, Clone)]
+struct GithubConfig {
+    username: String,
+    org: String,
+    repo: String,
+    access_token: Option<String>,
+    user_email: Option<String>,
+    user_name: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+struct OssConfig {
+    sync: OssSyncConfig,
+    access_key_id: Option<String>,
+    access_key_secret: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+struct OssSyncConfig {
+    root: String,
+    files: Vec<String>,
+    dirs: Vec<String>,
+}
+
 pub struct Hugo(PathBuf);
 
 impl Hugo {
-    pub async fn upgrade(config: &Config) -> Result<Self, anyhow::Error> {
-        let version = &config
+    pub async fn upgrade(config: &Config) -> Result<(Self, &HugoConfig), anyhow::Error> {
+        let config = config
             .hugo
             .as_ref()
-            .ok_or(anyhow::anyhow!("找不到[hugo]字段！"))?
-            .version;
+            .ok_or(anyhow::anyhow!("找不到[hugo]字段！"))?;
+        let version = &config.version;
 
         tracing::info!("请求的hugo版本是：{}", version);
         tracing::info!("正在校验现有hugo版本……");
@@ -96,11 +137,201 @@ impl Hugo {
             }
         }
 
-        Ok(Self(hugo))
+        Ok((Self(hugo), config))
+    }
+
+    async fn deploy_step(
+        &self,
+        config: &DeployConfig,
+        for_draft: bool,
+    ) -> Result<(), anyhow::Error> {
+        tracing::info!(
+            "正在hugo deploy {}版本……",
+            if for_draft { "draft" } else { "production" }
+        );
+
+        remove_public().await?;
+
+        let mut hugo = Command::new(&self.0);
+        let (hugo, base_url) = if for_draft {
+            let base_url = env::var("HUGO_DRAFT_BASE_URL")?;
+            (
+                hugo.arg("-b").arg(&base_url).arg("-D").arg("-F"),
+                Some(base_url),
+            )
+        } else {
+            (&mut hugo, None)
+        };
+
+        if let Some(base_url) = base_url {
+            tracing::info!(
+                "正在执行：hugo {}",
+                hugo.as_std()
+                    .get_args()
+                    .collect::<Vec<&OsStr>>()
+                    .join(" ".as_ref())
+                    .to_string_lossy()
+                    .replace(&base_url, "****")
+            );
+        } else {
+            tracing::info!("正在执行：hugo");
+        }
+        spawn_command(hugo, "hugo").await?;
+
+        deploy_github(&config.github, for_draft).await?;
+        deploy_oss(&config.oss, for_draft).await
     }
 }
 
 pub async fn deploy(config: &Config) -> Result<(), anyhow::Error> {
-    let _hugo = Hugo::upgrade(&config).await?;
+    let (hugo, config) = Hugo::upgrade(&config).await?;
+    let mut config = config
+        .deploy
+        .clone()
+        .ok_or(anyhow::anyhow!("找不到[hugo.deploy]字段！"))?;
+
+    config
+        .github
+        .access_token
+        .replace(env::var("DEPLOY_GITHUB_ACCESS_TOKE")?);
+    config
+        .github
+        .user_email
+        .replace(env::var("DEPLOY_GITHUB_USER_EMAIL")?);
+    config
+        .github
+        .user_name
+        .replace(env::var("DEPLOY_GITHUB_USER_NAME")?);
+    config
+        .oss
+        .access_key_id
+        .replace(env::var("OSS_ACCESS_KEY_ID")?);
+    config
+        .oss
+        .access_key_secret
+        .replace(env::var("OSS_ACCESS_KEY_SECRET")?);
+
+    tracing::info!("================");
+    hugo.deploy_step(&config, true).await?;
+
+    tracing::info!("================");
+    hugo.deploy_step(&config, false).await?;
+
+    Ok(())
+}
+
+async fn deploy_github(config: &GithubConfig, for_draft: bool) -> Result<(), anyhow::Error> {
+    tracing::info!(
+        "正在deploy github {}",
+        if for_draft { "draft" } else { "main" }
+    );
+
+    let repo = &config.repo;
+    let access_token = config.access_token.as_ref().unwrap();
+    let url = format!(
+        "https://{}:{}@github.com/{}/{}.git",
+        config.username, access_token, config.org, repo
+    );
+
+    tracing::info!("正在执行：git clone {}", url.replace(access_token, "****"));
+    spawn_command(Command::new("git").arg("clone").arg(url), "git").await?;
+    set_current_dir(repo)?;
+
+    tracing::info!("正在配置git环境……");
+    spawn_command(
+        Command::new("git")
+            .arg("config")
+            .arg("user.email")
+            .arg(config.user_email.as_ref().unwrap()),
+        "git",
+    )
+    .await?;
+    spawn_command(
+        Command::new("git")
+            .arg("config")
+            .arg("user.name")
+            .arg(config.user_name.as_ref().unwrap()),
+        "git",
+    )
+    .await?;
+
+    if for_draft {
+        tracing::info!("正在执行：git checkout draft");
+        spawn_command(Command::new("git").arg("checkout").arg("draft"), "git").await?;
+    }
+
+    remove_public().await?;
+
+    tracing::info!("正在拷贝public目录……");
+    spawn_blocking(move || dir::copy("../public", "", &Default::default())).await??;
+
+    tracing::info!("正在提交……");
+    spawn_command(Command::new("git").arg("add").arg("."), "git").await?;
+
+    if Command::new("git")
+        .arg("commit")
+        .arg("-m")
+        .arg("Deploy")
+        .spawn()?
+        .wait()
+        .await?
+        .success()
+    {
+        tracing::info!("正在执行：git push");
+        spawn_command(Command::new("git").arg("push"), "git").await?;
+    } else {
+        tracing::warn!("没有可以提交的内容！");
+    }
+
+    tracing::info!("正在清理{}目录……", repo);
+    set_current_dir("..")?;
+    Ok(remove_dir_all(repo).await?)
+}
+
+async fn deploy_oss(config: &OssConfig, for_draft: bool) -> Result<(), anyhow::Error> {
+    tracing::info!(
+        "正在deploy oss {}",
+        if for_draft { "draft" } else { "prod" }
+    );
+    set_current_dir("public")?;
+
+    tracing::info!("正在初始化Operator……");
+    let sync = &config.sync;
+    let oss = Oss::default()
+        .root(&sync.root)
+        .access_key_id(config.access_key_id.as_ref().unwrap())
+        .access_key_secret(config.access_key_secret.as_ref().unwrap());
+    let oss = if for_draft {
+        oss.bucket(&env::var("OSS_DRAFT_BUCKET")?)
+            .endpoint(&env::var("OSS_DRAFT_ENDPOINT")?)
+    } else {
+        oss.bucket(&env::var("OSS_PROD_BUCKET")?)
+            .endpoint(&env::var("OSS_PROD_ENDPOINT")?)
+    };
+
+    let op = Operator::new(oss)?
+        .layer(MimeGuessLayer::default())
+        .finish();
+
+    tracing::info!("开始上传文件……");
+    let mut files = ConcurrentUploadTasks::new(op.clone());
+    files.push_str_seq(&sync.files).await?;
+    files.join().await?;
+
+    tracing::info!("开始同步目录……");
+    for dir in &sync.dirs {
+        tracing::info!("正在同步目录：{}", dir);
+        sync_dir(&op, dir).await?;
+    }
+
+    Ok(set_current_dir("..")?)
+}
+
+async fn remove_public() -> Result<(), anyhow::Error> {
+    let public = Path::new("public");
+    if public.is_dir() {
+        tracing::info!("正在清理public目录……");
+        remove_dir_all(public).await?;
+    }
     Ok(())
 }
