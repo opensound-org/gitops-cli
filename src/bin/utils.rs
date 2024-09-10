@@ -1,5 +1,13 @@
-use std::{ffi::OsString, io::Read};
+use std::{
+    env,
+    ffi::{OsStr, OsString},
+    io::Read,
+};
 use tokio::process::Command;
+
+pub fn env_var(key: impl AsRef<OsStr>) -> Result<String, anyhow::Error> {
+    env::var(key.as_ref()).map_err(|_| anyhow::anyhow!("找不到环境变量：{:?}", key.as_ref()))
+}
 
 pub fn retain_decimal_places(f: f64, n: i32) -> f64 {
     let power = 10.0f64.powi(n);

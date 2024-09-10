@@ -14,9 +14,10 @@ use ops::{
 };
 use pushover_rs::{send_pushover_request, PushoverSound};
 use serde::Deserialize;
-use std::{env, fmt::Display};
+use std::fmt::Display;
 use tokio::fs;
 use tracing_subscriber::fmt::{format::FmtSpan, time::ChronoLocal};
+use utils::env_var;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -108,8 +109,8 @@ impl Cli {
     fn get_pushover(&self) -> Result<Pushover, anyhow::Error> {
         if self.op.need_pushover() {
             Ok(Pushover::Some {
-                user_key: env::var("PUSHOVER_USER_KEY")?,
-                app_token: env::var("PUSHOVER_APP_TOKEN")?,
+                user_key: env_var("PUSHOVER_USER_KEY")?,
+                app_token: env_var("PUSHOVER_APP_TOKEN")?,
             })
         } else {
             Ok(Pushover::None)

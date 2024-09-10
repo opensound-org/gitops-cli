@@ -1,13 +1,13 @@
 use super::super::{
     opendal_fs::{sync_dir, ConcurrentUploadTasks},
-    utils::{retain_decimal_places, spawn_command, unzip},
+    utils::{env_var, retain_decimal_places, spawn_command, unzip},
     Config,
 };
 use fs_extra::dir;
 use opendal::{layers::MimeGuessLayer, services::Oss, Operator};
 use serde::Deserialize;
 use std::{
-    env::{self, current_exe, set_current_dir},
+    env::{current_exe, set_current_dir},
     ffi::OsStr,
     path::{Path, PathBuf},
 };
@@ -154,7 +154,7 @@ impl Hugo {
 
         let mut hugo = Command::new(&self.0);
         let (hugo, base_url) = if for_draft {
-            let base_url = env::var("HUGO_DRAFT_BASE_URL")?;
+            let base_url = env_var("HUGO_DRAFT_BASE_URL")?;
             (
                 hugo.arg("-b").arg(&base_url).arg("-D").arg("-F"),
                 Some(base_url),
@@ -193,23 +193,23 @@ pub async fn deploy(config: &Config) -> Result<(), anyhow::Error> {
     config
         .github
         .access_token
-        .replace(env::var("DEPLOY_GITHUB_ACCESS_TOKE")?);
+        .replace(env_var("DEPLOY_GITHUB_ACCESS_TOKE")?);
     config
         .github
         .user_email
-        .replace(env::var("DEPLOY_GITHUB_USER_EMAIL")?);
+        .replace(env_var("DEPLOY_GITHUB_USER_EMAIL")?);
     config
         .github
         .user_name
-        .replace(env::var("DEPLOY_GITHUB_USER_NAME")?);
+        .replace(env_var("DEPLOY_GITHUB_USER_NAME")?);
     config
         .oss
         .access_key_id
-        .replace(env::var("OSS_ACCESS_KEY_ID")?);
+        .replace(env_var("OSS_ACCESS_KEY_ID")?);
     config
         .oss
         .access_key_secret
-        .replace(env::var("OSS_ACCESS_KEY_SECRET")?);
+        .replace(env_var("OSS_ACCESS_KEY_SECRET")?);
 
     tracing::info!("================");
     hugo.deploy_step(&config, true).await?;
@@ -302,11 +302,11 @@ async fn deploy_oss(config: &OssConfig, for_draft: bool) -> Result<(), anyhow::E
         .access_key_id(config.access_key_id.as_ref().unwrap())
         .access_key_secret(config.access_key_secret.as_ref().unwrap());
     let oss = if for_draft {
-        oss.bucket(&env::var("OSS_DRAFT_BUCKET")?)
-            .endpoint(&env::var("OSS_DRAFT_ENDPOINT")?)
+        oss.bucket(&env_var("OSS_DRAFT_BUCKET")?)
+            .endpoint(&env_var("OSS_DRAFT_ENDPOINT")?)
     } else {
-        oss.bucket(&env::var("OSS_PROD_BUCKET")?)
-            .endpoint(&env::var("OSS_PROD_ENDPOINT")?)
+        oss.bucket(&env_var("OSS_PROD_BUCKET")?)
+            .endpoint(&env_var("OSS_PROD_ENDPOINT")?)
     };
 
     let op = Operator::new(oss)?
