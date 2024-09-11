@@ -1,14 +1,146 @@
 use super::super::{
-    utils::{retain_decimal_places, unzip},
+    utils::{env_var, retain_decimal_places, spawn_command, unzip},
     Config,
 };
-use serde::Deserialize;
-use std::env::current_exe;
+use opendal::{layers::MimeGuessLayer, services::Oss, Operator};
+use serde::{Deserialize, Serialize};
+use std::{env::current_exe, path::PathBuf};
 use tokio::{fs, process::Command};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct CaddyConfig {
     version: String,
+    deploy: Option<DeployConfig>,
+    routes: Option<Routes>,
+}
+
+impl CaddyConfig {
+    fn get_caddyfile(&self) -> Result<String, anyhow::Error> {
+        Ok(format!(
+            "{}\r\n",
+            if let Some(r) = &self.routes {
+                r.join_site_blocks()?
+            } else {
+                "".into()
+            }
+        ))
+    }
+
+    fn version(version: &str) -> Self {
+        Self {
+            version: version.into(),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<CaddyConfig> for Config {
+    fn from(value: CaddyConfig) -> Self {
+        Self {
+            caddy: Some(value),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+struct DeployConfig {
+    oss: OssConfig,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+struct OssConfig {
+    root: String,
+    access_key_id: Option<String>,
+    access_key_secret: Option<String>,
+    ops_bucket: Option<String>,
+    ops_endpoint: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Routes {
+    fs: Option<Vec<FileServer>>,
+    redirs: Option<Vec<AddrsBackend>>,
+    rev_proxies: Option<Vec<AddrsBackend>>,
+}
+
+impl Routes {
+    fn join_site_blocks(&self) -> Result<String, anyhow::Error> {
+        let mut blocks = Vec::new();
+
+        if let Some(fs) = &self.fs {
+            push_site_blocks(fs, &mut blocks, |r| r.to_fs_site_block())?;
+        }
+
+        if let Some(redirs) = &self.redirs {
+            push_site_blocks(redirs, &mut blocks, |r| r.to_redir_site_block())?;
+        }
+
+        if let Some(proxies) = &self.rev_proxies {
+            push_site_blocks(proxies, &mut blocks, |r| r.to_proxy_site_block())?;
+        }
+
+        Ok(blocks.join("\r\n\r\n"))
+    }
+}
+
+fn push_site_blocks<T>(
+    r: &Vec<T>,
+    blocks: &mut Vec<String>,
+    f: impl Fn(&T) -> Result<String, anyhow::Error>,
+) -> Result<(), anyhow::Error> {
+    Ok(r.iter()
+        .try_for_each(|r| Ok::<(), anyhow::Error>(blocks.push(f(r)?)))?)
+}
+
+#[derive(Deserialize, Serialize)]
+struct FileServer {
+    addrs: Vec<String>,
+    dir: PathBuf,
+}
+
+impl FileServer {
+    fn to_fs_site_block(&self) -> Result<String, anyhow::Error> {
+        check_addrs(&self.addrs)?;
+        Ok(format!(
+            "{} {{\r\n  root {}\r\n  file_server browse\r\n}}",
+            self.addrs.join(", "),
+            self.dir.display()
+        ))
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct AddrsBackend {
+    addrs: Vec<String>,
+    backend: String,
+}
+
+impl AddrsBackend {
+    fn to_redir_site_block(&self) -> Result<String, anyhow::Error> {
+        check_addrs(&self.addrs)?;
+        Ok(format!(
+            "{} {{\r\n  redir https://{}{{uri}}\r\n}}",
+            self.addrs.join(", "),
+            self.backend
+        ))
+    }
+
+    fn to_proxy_site_block(&self) -> Result<String, anyhow::Error> {
+        check_addrs(&self.addrs)?;
+        Ok(format!(
+            "{} {{\r\n  reverse_proxy {}\r\n}}",
+            self.addrs.join(", "),
+            self.backend
+        ))
+    }
+}
+
+fn check_addrs(addrs: &[String]) -> Result<(), anyhow::Error> {
+    match addrs.is_empty() {
+        true => Err(anyhow::anyhow!("addrs不能为空！")),
+        false => Ok(()),
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -138,6 +270,64 @@ fn get_config(config: &Config) -> Result<&CaddyConfig, anyhow::Error> {
         .ok_or(anyhow::anyhow!("找不到[caddy]字段！"))
 }
 
-pub async fn deploy(_config: &Config) -> Result<(), anyhow::Error> {
-    Err(anyhow::anyhow!("暂时todo！"))
+pub async fn deploy(config: &Config) -> Result<(), anyhow::Error> {
+    let config = get_config(config)?;
+    let mut oss = config
+        .deploy
+        .clone()
+        .ok_or(anyhow::anyhow!("找不到[caddy.deploy]字段！"))?
+        .oss;
+
+    oss.access_key_id.replace(env_var("OSS_ACCESS_KEY_ID")?);
+    oss.access_key_secret
+        .replace(env_var("OSS_ACCESS_KEY_SECRET")?);
+    oss.ops_bucket.replace(env_var("OSS_OPS_BUCKET")?);
+    oss.ops_endpoint.replace(env_var("OSS_OPS_ENDPOINT")?);
+
+    tracing::info!("正在生成Caddyfile……");
+    let caddyfile = config.get_caddyfile()?;
+
+    tracing::info!("正在保存Caddyfile……");
+    fs::write("Caddyfile", &caddyfile).await?;
+
+    tracing::info!("正在提交git……");
+    spawn_command(Command::new("git").arg("add").arg("Caddyfile"), "git").await?;
+
+    if Command::new("git")
+        .arg("commit")
+        .arg("-m")
+        .arg("版本控制生成的Caddyfile")
+        .spawn()?
+        .wait()
+        .await?
+        .success()
+    {
+        tracing::info!("正在执行：git push");
+        spawn_command(Command::new("git").arg("push"), "git").await?;
+    } else {
+        tracing::warn!("没有可以提交的内容！");
+    }
+
+    tracing::info!("正在初始化OSS Operator……");
+    let op = Operator::new(
+        Oss::default()
+            .root(&oss.root)
+            .access_key_id(oss.access_key_id.as_ref().unwrap())
+            .access_key_secret(oss.access_key_secret.as_ref().unwrap())
+            .bucket(oss.ops_bucket.as_ref().unwrap())
+            .endpoint(oss.ops_endpoint.as_ref().unwrap()),
+    )?
+    .layer(MimeGuessLayer::default())
+    .finish();
+
+    tracing::info!("正在上传：Caddyfile");
+    op.write("Caddyfile", caddyfile).await?;
+
+    tracing::info!("正在上传处理后的：gitops.toml");
+    Ok(op
+        .write(
+            "gitops.toml",
+            toml::to_string_pretty(&Config::from(CaddyConfig::version(&config.version)))?,
+        )
+        .await?)
 }
