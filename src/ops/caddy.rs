@@ -4,7 +4,10 @@ use super::super::{
 };
 use opendal::{layers::MimeGuessLayer, services::Oss, Operator};
 use serde::{Deserialize, Serialize};
-use std::{env::current_exe, path::PathBuf};
+use std::{
+    env::current_exe,
+    path::{Path, PathBuf},
+};
 use tokio::{fs, process::Command};
 
 #[derive(Deserialize, Serialize, Default)]
@@ -324,10 +327,17 @@ pub async fn deploy(config: &Config) -> Result<(), anyhow::Error> {
     op.write("Caddyfile", caddyfile).await?;
 
     tracing::info!("正在上传处理后的：gitops.toml");
-    Ok(op
-        .write(
-            "gitops.toml",
-            toml::to_string_pretty(&Config::from(CaddyConfig::version(&config.version)))?,
-        )
-        .await?)
+    op.write(
+        "gitops.toml",
+        toml::to_string_pretty(&Config::from(CaddyConfig::version(&config.version)))?,
+    )
+    .await?;
+
+    let sync_toml = Path::new("sync.toml");
+    if sync_toml.is_file() {
+        tracing::info!("正在上传：sync.toml");
+        op.write("sync.toml", fs::read(sync_toml).await?).await?;
+    }
+
+    Ok(())
 }
