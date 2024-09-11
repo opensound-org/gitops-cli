@@ -20,7 +20,7 @@ pub struct CaddyConfig {
 impl CaddyConfig {
     fn get_caddyfile(&self) -> Result<String, anyhow::Error> {
         Ok(format!(
-            "{}\r\n",
+            "{}\n",
             if let Some(r) = &self.routes {
                 r.join_site_blocks()?
             } else {
@@ -83,7 +83,7 @@ impl Routes {
             push_site_blocks(proxies, &mut blocks, |r| r.to_proxy_site_block())?;
         }
 
-        Ok(blocks.join("\r\n\r\n"))
+        Ok(blocks.join("\n\n"))
     }
 }
 
@@ -106,7 +106,7 @@ impl FileServer {
     fn to_fs_site_block(&self) -> Result<String, anyhow::Error> {
         check_addrs(&self.addrs)?;
         Ok(format!(
-            "{} {{\r\n\troot {}\r\n\tfile_server browse\r\n}}",
+            "{} {{\n\troot {}\n\tfile_server browse\n}}",
             self.addrs.join(", "),
             self.dir.display()
         ))
@@ -123,7 +123,7 @@ impl AddrsBackend {
     fn to_redir_site_block(&self) -> Result<String, anyhow::Error> {
         check_addrs(&self.addrs)?;
         Ok(format!(
-            "{} {{\r\n\tredir https://{}{{uri}}\r\n}}",
+            "{} {{\n\tredir https://{}{{uri}}\n}}",
             self.addrs.join(", "),
             self.backend
         ))
@@ -132,7 +132,7 @@ impl AddrsBackend {
     fn to_proxy_site_block(&self) -> Result<String, anyhow::Error> {
         check_addrs(&self.addrs)?;
         Ok(format!(
-            "{} {{\r\n\treverse_proxy {}\r\n}}",
+            "{} {{\n\treverse_proxy {}\n}}",
             self.addrs.join(", "),
             self.backend
         ))
