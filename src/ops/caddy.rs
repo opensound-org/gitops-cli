@@ -106,7 +106,7 @@ impl FileServer {
     fn to_fs_site_block(&self) -> Result<String, anyhow::Error> {
         check_addrs(&self.addrs)?;
         Ok(format!(
-            "{} {{\r\n  root {}\r\n  file_server browse\r\n}}",
+            "{} {{\r\n\troot {}\r\n\tfile_server browse\r\n}}",
             self.addrs.join(", "),
             self.dir.display()
         ))
@@ -123,7 +123,7 @@ impl AddrsBackend {
     fn to_redir_site_block(&self) -> Result<String, anyhow::Error> {
         check_addrs(&self.addrs)?;
         Ok(format!(
-            "{} {{\r\n  redir https://{}{{uri}}\r\n}}",
+            "{} {{\r\n\tredir https://{}{{uri}}\r\n}}",
             self.addrs.join(", "),
             self.backend
         ))
@@ -132,7 +132,7 @@ impl AddrsBackend {
     fn to_proxy_site_block(&self) -> Result<String, anyhow::Error> {
         check_addrs(&self.addrs)?;
         Ok(format!(
-            "{} {{\r\n  reverse_proxy {}\r\n}}",
+            "{} {{\r\n\treverse_proxy {}\r\n}}",
             self.addrs.join(", "),
             self.backend
         ))
