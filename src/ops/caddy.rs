@@ -238,10 +238,7 @@ pub async fn upgrade(config: &Config) -> Result<(), anyhow::Error> {
             fs::write(&path, contents).await?;
 
             #[cfg(not(windows))]
-            chmod_exec(path).await?;
-
-            #[cfg(not(windows))]
-            use super::super::spawn_command;
+            crate::utils::chmod_exec(path).await?;
 
             #[cfg(not(windows))]
             {

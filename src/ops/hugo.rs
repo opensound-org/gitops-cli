@@ -133,7 +133,7 @@ impl Hugo {
                 fs::write(&path, contents).await?;
 
                 #[cfg(not(windows))]
-                chmod_exec(path).await?;
+                crate::utils::chmod_exec(path).await?;
             }
         }
 

@@ -74,7 +74,7 @@ pub fn unzip(z: &[u8], e_name: &str) -> Result<(OsString, Vec<u8>), anyhow::Erro
 pub async fn chmod_exec(path: impl AsRef<std::path::Path>) -> Result<(), anyhow::Error> {
     tracing::info!("正在设置执行权限……");
     use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
-    Ok(fs::set_permissions(path, Permissions::from_mode(0o755)).await?)
+    Ok(tokio::fs::set_permissions(path, Permissions::from_mode(0o755)).await?)
 }
 
 pub async fn spawn_command(cmd: &mut Command, hint: &str) -> Result<(), anyhow::Error> {
