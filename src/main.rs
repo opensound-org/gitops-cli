@@ -97,7 +97,7 @@ fn init_tracing() {
 struct Cli {
     #[command(subcommand)]
     op: Op,
-    #[arg(default_value = "gitops.toml")]
+    #[arg(long, global = true, default_value = "gitops.toml")]
     config: String,
 }
 
