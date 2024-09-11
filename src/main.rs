@@ -3,6 +3,7 @@ mod opendal_fs;
 mod ops {
     pub mod caddy;
     pub mod hugo;
+    pub mod sync;
 }
 mod utils;
 
@@ -11,6 +12,7 @@ use mem_probe::MemProbe;
 use ops::{
     caddy::{self, CaddyConfig},
     hugo::{self, Hugo, HugoConfig},
+    sync::{self, SyncConfig},
 };
 use pushover_rs::{send_pushover_request, PushoverSound};
 use serde::{Deserialize, Serialize};
@@ -60,6 +62,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 )
                 .await
         }
+        Op::Sync => sync::sync(&config).await,
         _ => Err(anyhow::anyhow!("暂时todo！")),
     }
 }
@@ -212,6 +215,7 @@ impl Pushover {
 struct Config {
     hugo: Option<HugoConfig>,
     caddy: Option<CaddyConfig>,
+    sync: Option<SyncConfig>,
 }
 
 trait HookErrIf<T>: Sized {
