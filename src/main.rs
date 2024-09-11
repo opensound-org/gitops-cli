@@ -63,7 +63,14 @@ async fn main() -> Result<(), anyhow::Error> {
                 .await
         }
         Op::Sync => sync::sync(&config).await,
-        _ => Err(anyhow::anyhow!("暂时todo！")),
+        Op::Alarm { reason, host } => {
+            pushover
+                .send_if_some(
+                    &format!("来自{}的事件：{:?}", host, reason),
+                    PushoverSound::SIREN,
+                )
+                .await
+        }
     }
 }
 
