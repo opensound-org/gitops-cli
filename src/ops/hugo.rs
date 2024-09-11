@@ -5,7 +5,7 @@ use super::super::{
 };
 use fs_extra::dir;
 use opendal::{layers::MimeGuessLayer, services::Oss, Operator};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     env::{current_exe, set_current_dir},
     ffi::OsStr,
@@ -17,19 +17,19 @@ use tokio::{
     task::spawn_blocking,
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct HugoConfig {
     version: String,
     deploy: Option<DeployConfig>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 struct DeployConfig {
     github: GithubConfig,
     oss: OssConfig,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 struct GithubConfig {
     username: String,
     org: String,
@@ -39,14 +39,14 @@ struct GithubConfig {
     user_name: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 struct OssConfig {
     sync: OssSyncConfig,
     access_key_id: Option<String>,
     access_key_secret: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 struct OssSyncConfig {
     root: String,
     files: Vec<String>,

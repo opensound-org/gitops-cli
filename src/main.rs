@@ -13,7 +13,7 @@ use ops::{
     hugo::{self, Hugo, HugoConfig},
 };
 use pushover_rs::{send_pushover_request, PushoverSound};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use tokio::fs;
 use tracing_subscriber::fmt::{format::FmtSpan, time::ChronoLocal};
@@ -208,7 +208,7 @@ impl Pushover {
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 struct Config {
     hugo: Option<HugoConfig>,
     caddy: Option<CaddyConfig>,
