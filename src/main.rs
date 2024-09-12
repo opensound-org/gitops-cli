@@ -179,6 +179,7 @@ enum Target {
 #[derive(ValueEnum, Debug, Clone)]
 enum Alarm {
     Login,
+    Startup,
     ConnectRemote,
     ConnectLocal,
     Unlock,
